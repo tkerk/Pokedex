@@ -16,6 +16,7 @@ self.addEventListener('install', (event) => {
     self.skipWaiting();
 });
 
+
 self.addEventListener('fetch', (event) => {
     if (event.request.method === "GET") {
         const resp = fetch(event.request)
