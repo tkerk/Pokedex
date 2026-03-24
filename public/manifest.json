@@ -1,0 +1,18 @@
+{
+  "name": "Pokédex TK",
+  "short_name": "Pokédex TK",
+  "description": "Plataforma interactiva de exploración Pokémon con búsqueda avanzada, estadísticas detalladas, cadenas evolutivas y gestión de favoritos en tiempo real.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#000000",
+  "theme_color": "#39FF14",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/Logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
