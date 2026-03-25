@@ -1,16 +1,56 @@
-const CACHE_STATIC_NAME = 'appShell_v2';
-const CACHE_DYNAMIC_NAME = 'dynamic_v2.0';
-const CACHE_IMAGES_NAME = 'images_v1.0';
+const CACHE_STATIC_NAME = 'appShell_v3';
+const CACHE_DYNAMIC_NAME = 'dynamic_v3.0';
+const CACHE_IMAGES_NAME = 'images_v2.0';
+const OFFLINE_QUEUE_STORE = 'offline-requests';
+const OFFLINE_DB_NAME = 'pokedex-offline-db';
+const OFFLINE_DB_VERSION = 1;
 
-// Archivos del App Shell que se cachean al instalar
 const APP_SHELL_FILES = [
   '/',
   '/index.html',
   '/manifest.json',
-  '/favicon.ico'
+  '/favicon.ico',
+  '/Logo.png'
 ];
 
-// 1. INSTALL — Cachear App Shell y rutas fijas
+// ─── IndexedDB helpers ───
+function openOfflineDB() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(OFFLINE_DB_NAME, OFFLINE_DB_VERSION);
+    request.onupgradeneeded = (e) => {
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains(OFFLINE_QUEUE_STORE)) {
+        db.createObjectStore(OFFLINE_QUEUE_STORE, { keyPath: 'id', autoIncrement: true });
+      }
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function getAllPendingRequests() {
+  const db = await openOfflineDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(OFFLINE_QUEUE_STORE, 'readonly');
+    const store = tx.objectStore(OFFLINE_QUEUE_STORE);
+    const req = store.getAll();
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function deletePendingRequest(id) {
+  const db = await openOfflineDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(OFFLINE_QUEUE_STORE, 'readwrite');
+    const store = tx.objectStore(OFFLINE_QUEUE_STORE);
+    const req = store.delete(id);
+    req.onsuccess = () => resolve();
+    req.onerror = () => reject(req.error);
+  });
+}
+
+// ─── 1. INSTALL ───
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_STATIC_NAME).then((cache) => {
@@ -21,10 +61,9 @@ self.addEventListener('install', (event) => {
   self.skipWaiting();
 });
 
-// 2. ACTIVATE — Eliminar cachés viejos
+// ─── 2. ACTIVATE ───
 self.addEventListener('activate', (event) => {
   const cacheWhitelist = [CACHE_STATIC_NAME, CACHE_DYNAMIC_NAME, CACHE_IMAGES_NAME];
-
   event.waitUntil(
     caches.keys().then((cacheNames) => {
       return Promise.all(
@@ -40,68 +79,95 @@ self.addEventListener('activate', (event) => {
   return self.clients.claim();
 });
 
-// 3. FETCH — Network First + Caché Dinámico + Imágenes Offline
+// ─── 3. FETCH ───
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
 
   const url = new URL(event.request.url);
 
-  // Estrategia especial para imágenes de Pokémon (PokeAPI artwork)
+  // Imágenes Pokémon → Cache First
   if (url.hostname === 'raw.githubusercontent.com' || url.pathname.includes('/sprites/')) {
     event.respondWith(
       caches.open(CACHE_IMAGES_NAME).then((cache) => {
-        return cache.match(event.request).then((cachedResponse) => {
-          if (cachedResponse) {
-            return cachedResponse;
-          }
-          return fetch(event.request).then((networkResponse) => {
-            cache.put(event.request, networkResponse.clone());
-            return networkResponse;
-          }).catch(() => {
-            // Si no hay internet y no está en caché, retornar vacío
-            return new Response('', { status: 404 });
-          });
+        return cache.match(event.request).then((cached) => {
+          if (cached) return cached;
+          return fetch(event.request).then((response) => {
+            if (response.ok) {
+              cache.put(event.request, response.clone());
+            }
+            return response;
+          }).catch(() => new Response('', { status: 404 }));
         });
       })
     );
     return;
   }
 
-  // Estrategia para peticiones a la PokeAPI (caché dinámico)
+  // PokeAPI → Network First con caché
   if (url.hostname === 'pokeapi.co') {
     event.respondWith(
-      fetch(event.request)
-        .then((networkResponse) => {
-          const cloned = networkResponse.clone();
+      fetch(event.request).then((response) => {
+        if (response.ok) {
+          const cloned = response.clone();
           caches.open(CACHE_DYNAMIC_NAME).then((cache) => {
             cache.put(event.request, cloned);
           });
-          return networkResponse;
-        })
-        .catch(() => {
-          return caches.match(event.request);
-        })
+        }
+        return response;
+      }).catch(() => {
+        return caches.match(event.request);
+      })
     );
     return;
   }
 
-  // Estrategia para el App Shell y archivos estáticos (Network First)
+  // Archivos estáticos → Network First
   event.respondWith(
-    fetch(event.request)
-      .then((respuesta) => {
-        // Si hay respuesta de red, guardar en caché dinámico si no existe
-        caches.match(event.request).then((cache) => {
-          if (cache === undefined) {
-            caches.open(CACHE_DYNAMIC_NAME).then((cacheDyn) => {
-              cacheDyn.put(event.request, respuesta.clone());
-            });
-          }
+    fetch(event.request).then((response) => {
+      if (response.ok) {
+        const cloned = response.clone();
+        caches.open(CACHE_DYNAMIC_NAME).then((cache) => {
+          cache.put(event.request, cloned);
         });
-        return respuesta;
-      })
-      .catch(() => {
-        // Sin internet: servir desde caché
-        return caches.match(event.request);
-      })
+      }
+      return response;
+    }).catch(() => {
+      return caches.match(event.request);
+    })
   );
 });
+
+// ─── 4. BACKGROUND SYNC ───
+self.addEventListener('sync', (event) => {
+  if (event.tag === 'sync-offline-requests') {
+    console.log('[SW] Ejecutando sync de peticiones pendientes...');
+    event.waitUntil(replayPendingRequests());
+  }
+});
+
+async function replayPendingRequests() {
+  try {
+    const pending = await getAllPendingRequests();
+    console.log(`[SW] ${pending.length} peticiones pendientes`);
+
+    for (const item of pending) {
+      try {
+        const response = await fetch(item.url, {
+          method: item.method,
+          headers: item.headers,
+          body: item.body ? JSON.stringify(item.body) : undefined,
+        });
+
+        if (response.ok) {
+          await deletePendingRequest(item.id);
+          console.log('[SW] Petición sincronizada:', item.url);
+        }
+      } catch (err) {
+        console.log('[SW] Petición aún sin conexión:', item.url);
+        // Si falla, se queda para el próximo sync
+      }
+    }
+  } catch (err) {
+    console.error('[SW] Error en sync:', err);
+  }
+}
