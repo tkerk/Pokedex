@@ -95,10 +95,9 @@ const doSearch = async () => {
   if (!q) return;
   searchLoading.value = true;
   try {
-    const result = await pokeService.searchPokemon(q);
-    filteredByApi.value = result ? [result] : [];
+    const results = await pokeService.searchPokemonFuzzy(q);
+    filteredByApi.value = results;
   } catch (e) {
-    // Pokemon no encontrado — no es un error crítico
     filteredByApi.value = [];
   } finally {
     searchLoading.value = false;
