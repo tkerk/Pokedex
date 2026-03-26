@@ -32,13 +32,13 @@ const loadTeams = async () => {
   finally { loading.value = false; }
 };
 
-// Buscar Pokémon para agregar al equipo (búsqueda global + fuzzy)
+// Buscar Pokémon para agregar al equipo
 const doSearch = async () => {
   if (!searchQuery.value.trim()) { searchResults.value = []; return; }
   searchLoading.value = true;
   try {
-    const results = await pokeService.searchPokemonFuzzy(searchQuery.value.trim());
-    searchResults.value = results;
+    const result = await pokeService.searchPokemon(searchQuery.value.trim());
+    searchResults.value = result ? [result] : [];
   } catch (e) { searchResults.value = []; }
   finally { searchLoading.value = false; }
 };
