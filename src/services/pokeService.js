@@ -1,4 +1,10 @@
+import { fuzzySearch } from '@/utils/helpers';
+
 const POKEAPI = 'https://pokeapi.co/api/v2';
+
+// Cache de nombres de Pokémon para búsqueda fuzzy
+let allPokemonCache = null;
+let cachePromise = null;
 
 export const pokeService = {
   // ──── Lista paginada ────
@@ -14,11 +20,64 @@ export const pokeService = {
     return { results: detailed, count: data.count };
   },
 
-  // ──── Buscar por nombre o id ────
+  // ──── Buscar por nombre o id (exacto) ────
   async searchPokemon(query) {
     const res = await fetch(`${POKEAPI}/pokemon/${query.toLowerCase()}`);
     if (!res.ok) return null;
     return res.json();
+  },
+
+  // ──── Cargar todos los nombres para fuzzy search ────
+  async getAllPokemonNames() {
+    if (allPokemonCache) return allPokemonCache;
+    if (cachePromise) return cachePromise;
+
+    cachePromise = (async () => {
+      const res = await fetch(`${POKEAPI}/pokemon?limit=1302&offset=0`);
+      const data = await res.json();
+      allPokemonCache = data.results.map((p) => {
+        const id = parseInt(p.url.split('/').filter(Boolean).pop());
+        return { name: p.name, id };
+      });
+      return allPokemonCache;
+    })();
+
+    return cachePromise;
+  },
+
+  // ──── Búsqueda fuzzy con Levenshtein ────
+  async fuzzySearchPokemon(query, threshold = 3) {
+    const q = query.trim().toLowerCase();
+    if (!q) return [];
+
+    // Primero intentar búsqueda exacta por API
+    if (/^\d+$/.test(q)) {
+      try {
+        const result = await this.searchPokemon(q);
+        return result ? [result] : [];
+      } catch (e) { return []; }
+    }
+
+    // Cargar lista completa
+    const allPokemon = await this.getAllPokemonNames();
+
+    // Búsqueda fuzzy
+    const matches = fuzzySearch(q, allPokemon, 'name', threshold, 8);
+
+    if (matches.length === 0) return [];
+
+    // Cargar detalles de los matches
+    const detailed = await Promise.all(
+      matches.map(async (p) => {
+        try {
+          const res = await fetch(`${POKEAPI}/pokemon/${p.id}`);
+          if (!res.ok) return null;
+          return res.json();
+        } catch (e) { return null; }
+      })
+    );
+
+    return detailed.filter(Boolean);
   },
 
   // ──── Detalles completos ────

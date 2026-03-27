@@ -1,6 +1,6 @@
-const CACHE_STATIC_NAME = 'appShell_v3';
-const CACHE_DYNAMIC_NAME = 'dynamic_v3.0';
-const CACHE_IMAGES_NAME = 'images_v2.0';
+const CACHE_STATIC_NAME = 'appShell_v4';
+const CACHE_DYNAMIC_NAME = 'dynamic_v4.0';
+const CACHE_IMAGES_NAME = 'images_v3.0';
 const OFFLINE_QUEUE_STORE = 'offline-requests';
 const OFFLINE_DB_NAME = 'pokedex-offline-db';
 const OFFLINE_DB_VERSION = 1;
@@ -84,6 +84,7 @@ self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
 
   const url = new URL(event.request.url);
+  if (!url.protocol.startsWith('http')) return;
 
   // Imágenes Pokémon → Cache First
   if (url.hostname === 'raw.githubusercontent.com' || url.pathname.includes('/sprites/')) {
@@ -171,3 +172,77 @@ async function replayPendingRequests() {
     console.error('[SW] Error en sync:', err);
   }
 }
+
+// ─── 5. PUSH NOTIFICATIONS ───
+self.addEventListener('push', (event) => {
+  console.log('[SW] Push recibido');
+
+  let payload = {};
+  try {
+    payload = event.data ? event.data.json() : {};
+  } catch (e) {
+    payload = { title: 'Pokédex TK', body: event.data ? event.data.text() : 'Nueva notificación' };
+  }
+
+  const title = payload.title || 'Pokédex TK';
+  const options = {
+    body: payload.body || '',
+    icon: payload.icon || '/Logo.png',
+    badge: payload.badge || '/Logo.png',
+    tag: payload.tag || 'default',
+    data: payload.data || {},
+    vibrate: [200, 100, 200],
+    actions: [],
+    requireInteraction: true,
+  };
+
+  // Agregar acciones según tipo de notificación
+  if (payload.data?.type === 'friend_request') {
+    options.actions = [
+      { action: 'view', title: '👀 Ver solicitud' },
+      { action: 'dismiss', title: '❌ Ignorar' },
+    ];
+  } else if (payload.data?.type === 'battle_challenge') {
+    options.actions = [
+      { action: 'view', title: '⚔️ Ver reto' },
+      { action: 'dismiss', title: '❌ Ignorar' },
+    ];
+  }
+
+  event.waitUntil(
+    self.registration.showNotification(title, options).then(() => {
+      // Enviar mensaje a los clientes activos (foreground)
+      return self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
+        clients.forEach((client) => {
+          client.postMessage({
+            type: 'PUSH_RECEIVED',
+            payload: payload,
+          });
+        });
+      });
+    })
+  );
+});
+
+// ─── 6. NOTIFICATION CLICK ───
+self.addEventListener('notificationclick', (event) => {
+  console.log('[SW] Notification click:', event.action);
+  event.notification.close();
+
+  if (event.action === 'dismiss') return;
+
+  const urlToOpen = event.notification.data?.url || '/';
+
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
+      // Si ya hay una ventana abierta, navegar a la URL
+      const client = clients.find((c) => c.visibilityState === 'visible');
+      if (client) {
+        client.navigate(urlToOpen);
+        return client.focus();
+      }
+      // Si no, abrir una nueva
+      return self.clients.openWindow(urlToOpen);
+    })
+  );
+});

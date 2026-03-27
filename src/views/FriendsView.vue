@@ -1,7 +1,7 @@
 <script setup>
 import { ref, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
-import { Users, Search, UserPlus, Check, X, Loader2, Clock } from 'lucide-vue-next';
+import { Users, Search, UserPlus, Check, X, Loader2, Clock, Swords } from 'lucide-vue-next';
 import { authStore } from '@/stores/authStore';
 import { apiFetch } from '@/services/api';
 
@@ -15,6 +15,7 @@ const searchError = ref('');
 const searchLoading = ref(false);
 const sendError = ref('');
 const sendSuccess = ref('');
+const challengeMsg = ref('');
 
 const loadFriends = async () => {
   if (!authStore.isLoggedIn) { loading.value = false; return; }
@@ -69,6 +70,21 @@ const rejectRequest = async (id) => {
     await apiFetch(`/friends/${id}/reject`, { method: 'PATCH' });
     await loadFriends();
   } catch (e) { console.error(e); }
+};
+
+const challengeBattle = async (friendId, friendName) => {
+  challengeMsg.value = '';
+  try {
+    await apiFetch('/battle/challenge', {
+      method: 'POST',
+      body: JSON.stringify({ opponentId: friendId }),
+    });
+    challengeMsg.value = `⚔️ ¡Reto enviado a ${friendName}!`;
+    setTimeout(() => { challengeMsg.value = ''; }, 4000);
+  } catch (e) {
+    challengeMsg.value = `Error: ${e.message}`;
+    setTimeout(() => { challengeMsg.value = ''; }, 4000);
+  }
 };
 
 const acceptedFriends = () => friends.value.filter(f => f.status === 'accepted');
@@ -126,6 +142,13 @@ onMounted(loadFriends);
         <p v-if="sendSuccess" style="color:#22c55e;font-size:0.7rem;margin-top:0.5rem;">{{ sendSuccess }}</p>
       </div>
 
+      <!-- Challenge message -->
+      <Transition name="fade">
+        <p v-if="challengeMsg" style="text-align:center;font-size:0.75rem;margin-bottom:1rem;padding:0.5rem;border:1px solid var(--neon-green);background:rgba(0,255,0,0.05);color:var(--neon-green);">
+          {{ challengeMsg }}
+        </p>
+      </Transition>
+
       <!-- Pending Requests -->
       <div v-if="pendingRequests.length > 0" style="margin-bottom:2rem;">
         <h3 class="neon-text-blue" style="font-size:0.75rem;letter-spacing:0.15em;text-transform:uppercase;margin-bottom:1rem;">
@@ -164,9 +187,15 @@ onMounted(loadFriends);
                 <p style="font-size:0.55rem;color:var(--neon-blue);">{{ f.friend_code }}</p>
               </div>
             </div>
-            <span style="font-size:0.6rem;" :style="f.is_online ? 'color:#22c55e;' : 'color:rgba(255,255,255,0.3);'">
-              {{ f.is_online ? 'CONECTADO' : 'DESCONECTADO' }}
-            </span>
+            <div style="display:flex;align-items:center;gap:0.5rem;">
+              <button @click="challengeBattle(f.friend_id, f.friend_name)" class="pagination__btn"
+                style="padding:0.3rem 0.7rem;font-size:0.6rem;display:flex;align-items:center;gap:0.3rem;">
+                <Swords :size="14" /> RETAR
+              </button>
+              <span style="font-size:0.6rem;" :style="f.is_online ? 'color:#22c55e;' : 'color:rgba(255,255,255,0.3);'">
+                {{ f.is_online ? 'CONECTADO' : 'DESCONECTADO' }}
+              </span>
+            </div>
           </div>
         </div>
       </div>

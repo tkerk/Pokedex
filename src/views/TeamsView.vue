@@ -7,6 +7,7 @@ import { favoritesStore } from '@/stores/favoritesStore';
 import { apiFetch } from '@/services/api';
 import { pokeService } from '@/services/pokeService';
 import { padId, getTypeClass, getArtworkById } from '@/utils/helpers';
+import { cacheTeams, getCachedTeams, addCachedTeam, removeCachedTeam } from '@/utils/offlineDB';
 
 const router = useRouter();
 const teams = ref([]);
@@ -28,7 +29,19 @@ const loadTeams = async () => {
   try {
     const data = await apiFetch('/teams');
     teams.value = data;
-  } catch (e) { console.error(e); }
+    // Cachear en IndexedDB
+    await cacheTeams(data).catch(() => {});
+  } catch (e) {
+    console.error(e);
+    // Si offline, cargar desde cache
+    try {
+      const cached = await getCachedTeams();
+      if (cached.length > 0) {
+        teams.value = cached;
+        console.log('[Offline] Equipos cargados desde cache');
+      }
+    } catch (ce) { console.error('Error leyendo cache:', ce); }
+  }
   finally { loading.value = false; }
 };
 
@@ -37,8 +50,8 @@ const doSearch = async () => {
   if (!searchQuery.value.trim()) { searchResults.value = []; return; }
   searchLoading.value = true;
   try {
-    const result = await pokeService.searchPokemon(searchQuery.value.trim());
-    searchResults.value = result ? [result] : [];
+    const results = await pokeService.fuzzySearchPokemon(searchQuery.value.trim());
+    searchResults.value = results;
   } catch (e) { searchResults.value = []; }
   finally { searchLoading.value = false; }
 };
@@ -74,22 +87,53 @@ const createTeam = async () => {
 
   try {
     const members = selectedMembers.value.map(m => ({ pokemonId: m.id, pokemonName: m.name }));
-    await apiFetch('/teams', {
+    const result = await apiFetch('/teams', {
       method: 'POST',
       body: JSON.stringify({ teamName: teamName.value, members }),
     });
+
+    // Si la respuesta es válida (online), agregar al cache
+    if (result && !result.offline) {
+      teams.value.unshift(result);
+      await addCachedTeam(result).catch(() => {});
+    } else {
+      // Offline: agregar optimistamente con ID temporal
+      const tempTeam = {
+        id: `temp_${Date.now()}`,
+        team_name: teamName.value,
+        is_active: true,
+        members: members.map((m, i) => ({
+          pokemon_id: m.pokemonId,
+          pokemon_name: m.pokemonName,
+          position: i + 1,
+        })),
+      };
+      teams.value.unshift(tempTeam);
+      await addCachedTeam(tempTeam).catch(() => {});
+    }
+
     teamName.value = '';
     selectedMembers.value = [];
     showCreate.value = false;
-    await loadTeams();
   } catch (e) { createError.value = e.message; }
 };
 
 const deleteTeam = async (teamId) => {
+  // Optimista: eliminar de UI inmediatamente
+  const backup = [...teams.value];
+  teams.value = teams.value.filter(t => t.id !== teamId);
+  await removeCachedTeam(teamId).catch(() => {});
+
   try {
     await apiFetch(`/teams/${teamId}`, { method: 'DELETE' });
-    teams.value = teams.value.filter(t => t.id !== teamId);
-  } catch (e) { console.error(e); }
+  } catch (e) {
+    if (navigator.onLine) {
+      // Revertir si no es error de red
+      teams.value = backup;
+      console.error(e);
+    }
+    // Si offline, la petición se guardó para sync
+  }
 };
 
 const toggleActive = async (teamId) => {

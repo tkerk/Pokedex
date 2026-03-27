@@ -59,3 +59,55 @@ export const generationNames = {
 };
 
 export const capitalize = (str) => str ? str.charAt(0).toUpperCase() + str.slice(1) : '';
+
+// ─── Levenshtein Distance ───
+export function levenshteinDistance(a, b) {
+  const la = a.length;
+  const lb = b.length;
+  const dp = Array.from({ length: la + 1 }, () => Array(lb + 1).fill(0));
+
+  for (let i = 0; i <= la; i++) dp[i][0] = i;
+  for (let j = 0; j <= lb; j++) dp[0][j] = j;
+
+  for (let i = 1; i <= la; i++) {
+    for (let j = 1; j <= lb; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      dp[i][j] = Math.min(
+        dp[i - 1][j] + 1,       // eliminación
+        dp[i][j - 1] + 1,       // inserción
+        dp[i - 1][j - 1] + cost // sustitución
+      );
+    }
+  }
+  return dp[la][lb];
+}
+
+// ─── Fuzzy Search ───
+export function fuzzySearch(query, items, nameKey = 'name', threshold = 3, maxResults = 10) {
+  const q = query.toLowerCase();
+
+  // Primero buscar coincidencias que contengan el query
+  const containsMatches = items.filter(item => {
+    const name = (typeof item === 'string' ? item : item[nameKey]).toLowerCase();
+    return name.includes(q);
+  });
+
+  if (containsMatches.length > 0) {
+    return containsMatches.slice(0, maxResults);
+  }
+
+  // Si no hay coincidencias exactas, usar Levenshtein
+  const scored = items
+    .map(item => {
+      const name = (typeof item === 'string' ? item : item[nameKey]).toLowerCase();
+      const distance = levenshteinDistance(q, name);
+      // También considerar distancia parcial (prefijo)
+      const partialDistance = levenshteinDistance(q, name.substring(0, q.length));
+      const bestDistance = Math.min(distance, partialDistance);
+      return { item, distance: bestDistance };
+    })
+    .filter(s => s.distance <= threshold)
+    .sort((a, b) => a.distance - b.distance);
+
+  return scored.slice(0, maxResults).map(s => s.item);
+}

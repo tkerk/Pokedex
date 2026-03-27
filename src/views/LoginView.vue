@@ -24,11 +24,17 @@ const handleLogin = async () => {
     await favoritesStore.load();
     router.push('/');
   } catch (error) {
-    errorMsg.value = error.message;
+    const msg = error.message || '';
+    if (msg.includes('Credenciales inválidas')) {
+      errorMsg.value = 'Email o contraseña incorrectos. Verifica que tengas una cuenta registrada.';
+    } else {
+      errorMsg.value = msg;
+    }
   } finally {
     loading.value = false;
   }
 };
+
 </script>
 
 <template>
