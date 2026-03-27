@@ -1,9 +1,9 @@
-const CACHE_STATIC_NAME = 'appShell_v4';
-const CACHE_DYNAMIC_NAME = 'dynamic_v4.0';
-const CACHE_IMAGES_NAME = 'images_v3.0';
+const CACHE_STATIC_NAME = 'appShell_v5';
+const CACHE_DYNAMIC_NAME = 'dynamic_v5.0';
+const CACHE_IMAGES_NAME = 'images_v4.0';
 const OFFLINE_QUEUE_STORE = 'offline-requests';
 const OFFLINE_DB_NAME = 'pokedex-offline-db';
-const OFFLINE_DB_VERSION = 1;
+const OFFLINE_DB_VERSION = 2; // Sincronizado con utils/offlineDB.js
 
 const APP_SHELL_FILES = [
   '/',
@@ -149,7 +149,11 @@ self.addEventListener('sync', (event) => {
 async function replayPendingRequests() {
   try {
     const pending = await getAllPendingRequests();
+    if (pending.length === 0) return;
+    
     console.log(`[SW] ${pending.length} peticiones pendientes`);
+
+    let syncSuccess = true;
 
     for (const item of pending) {
       try {
@@ -162,14 +166,21 @@ async function replayPendingRequests() {
         if (response.ok) {
           await deletePendingRequest(item.id);
           console.log('[SW] Petición sincronizada:', item.url);
+        } else {
+          syncSuccess = false;
         }
       } catch (err) {
         console.log('[SW] Petición aún sin conexión:', item.url);
-        // Si falla, se queda para el próximo sync
+        syncSuccess = false;
       }
+    }
+
+    if (!syncSuccess) {
+      throw new Error('Sync incompleto o sin internet, reprogramando para más tarde');
     }
   } catch (err) {
     console.error('[SW] Error en sync:', err);
+    throw err; // El API de Sync REQUIERE que este evento retorne un error para usar su backoff natural
   }
 }
 
