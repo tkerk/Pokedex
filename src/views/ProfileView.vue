@@ -1,15 +1,17 @@
 <script setup>
 import { ref, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
-import { User, Copy, Check, Loader2, LogOut } from 'lucide-vue-next';
+import { User, Copy, Check, Loader2, LogOut, Bell } from 'lucide-vue-next';
 import { authStore } from '@/stores/authStore';
 import { favoritesStore } from '@/stores/favoritesStore';
 import { apiFetch } from '@/services/api';
+import { pushManager } from '@/services/pushManager';
 
 const router = useRouter();
 const profile = ref(null);
 const loading = ref(true);
 const copied = ref(false);
+const pushStatus = ref('Verificando...');
 
 const loadProfile = async () => {
   if (!authStore.isLoggedIn) { loading.value = false; return; }
@@ -20,6 +22,31 @@ const loadProfile = async () => {
   finally { loading.value = false; }
 };
 
+const checkPushStatus = () => {
+  if (!('Notification' in window)) {
+    pushStatus.value = 'No soportado';
+    return;
+  }
+  if (Notification.permission === 'granted') {
+    pushStatus.value = 'Activadas';
+  } else if (Notification.permission === 'denied') {
+    pushStatus.value = 'Bloqueadas en navegador';
+  } else {
+    pushStatus.value = 'Falta permiso';
+  }
+};
+
+const forcePush = async () => {
+  pushStatus.value = 'Conectando...';
+  // Esto forzará el requester de Notification del navegador si está en 'default'
+  const success = await pushManager.init();
+  if (success) {
+    pushStatus.value = 'Activadas';
+  } else {
+    pushStatus.value = Notification.permission === 'denied' ? 'Bloqueadas en navegador' : 'Error al suscribir';
+  }
+};
+
 const copyCode = async () => {
   if (!profile.value?.friend_code) return;
   try {
@@ -27,7 +54,6 @@ const copyCode = async () => {
     copied.value = true;
     setTimeout(() => { copied.value = false; }, 2000);
   } catch (e) {
-    // Fallback
     const el = document.createElement('textarea');
     el.value = profile.value.friend_code;
     document.body.appendChild(el);
@@ -45,7 +71,10 @@ const handleLogout = () => {
   router.push('/');
 };
 
-onMounted(loadProfile);
+onMounted(() => {
+  loadProfile();
+  checkPushStatus();
+});
 </script>
 
 <template>
@@ -102,6 +131,18 @@ onMounted(loadProfile);
           <div class="modal-info-label">Miembro desde</div>
           <div class="modal-info-value">{{ new Date(profile.created_at).toLocaleDateString('es') }}</div>
         </div>
+      </div>
+
+      <!-- Push Status -->
+      <div style="border:2px solid var(--neon-blue);padding:1.5rem;text-align:center;margin-bottom:2rem;background:rgba(0,100,255,0.03);">
+        <label style="font-size:0.65rem;letter-spacing:0.2em;color:var(--neon-blue);text-transform:uppercase;display:block;margin-bottom:0.8rem;">NOTIFICACIONES PUSH</label>
+        <p style="font-size:0.75rem;margin-bottom:1rem;color:rgba(255,255,255,0.7);">
+          Estado: <span :style="pushStatus === 'Activadas' ? 'color:#22c55e;font-weight:bold;' : 'color:#ef4444;font-weight:bold;'">{{ pushStatus }}</span>
+        </p>
+        <button @click="forcePush" class="pagination__btn" style="padding:0.6rem 1.2rem;font-size:0.75rem;width:100%;max-width:250px;">
+          <Bell :size="16" style="display:inline;vertical-align:middle;margin-right:0.3rem;" />
+          FORZAR ACTIVACIÓN
+        </button>
       </div>
 
       <!-- Logout -->

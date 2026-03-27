@@ -1,5 +1,4 @@
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
-const VAPID_PUBLIC_KEY = import.meta.env.VITE_VAPID_PUBLIC_KEY;
 
 function urlBase64ToUint8Array(base64String) {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
@@ -32,10 +31,12 @@ export const pushManager = {
       let subscription = await registration.pushManager.getSubscription();
       
       if (!subscription) {
-        // Crear nueva suscripción
-        const publicKey = VAPID_PUBLIC_KEY;
+        // Obtener VAPID public key del backend dinámicamente
+        const vapidRes = await fetch(`${API_URL}/push/vapid-key`);
+        const { publicKey } = await vapidRes.json();
+        
         if (!publicKey) {
-          console.error('[Push] VAPID public key no configurada');
+          console.error('[Push] VAPID public key no configurada en el backend');
           return false;
         }
 
