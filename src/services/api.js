@@ -1,4 +1,4 @@
-import { saveOfflineRequest, registerSync } from '@/utils/offlineDB';
+import { saveOfflineRequest, registerSync, getAllOfflineRequests, deleteOfflineRequest } from '@/utils/offlineDB';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 
@@ -43,5 +43,32 @@ export const apiFetch = async (endpoint, options = {}) => {
       }
     }
     throw error;
+  }
+};
+
+export const syncOfflineRequestsNow = async () => {
+  try {
+    const pending = await getAllOfflineRequests();
+    if (pending.length === 0) return;
+    
+    console.log(`[Frontend Sync] Forzando sincronización de ${pending.length} peticiones...`);
+    
+    for (const req of pending) {
+      try {
+        const response = await fetch(req.url, {
+          method: req.method,
+          headers: req.headers,
+          body: req.body ? JSON.stringify(req.body) : undefined,
+        });
+        if (response.ok) {
+          await deleteOfflineRequest(req.id);
+          console.log('[Frontend Sync] Exitosa:', req.url);
+        }
+      } catch (err) {
+        console.error('[Frontend Sync] Aún sin red para:', req.url);
+      }
+    }
+  } catch (error) {
+    console.error('[Frontend Sync] Error leyendo BD offline:', error);
   }
 };

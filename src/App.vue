@@ -4,6 +4,7 @@ import NavBar from '@/components/NavBar.vue';
 import { authStore } from '@/stores/authStore';
 import { favoritesStore } from '@/stores/favoritesStore';
 import { pushManager } from '@/services/pushManager';
+import { syncOfflineRequestsNow } from '@/services/api';
 
 let heartbeatInterval = null;
 const foregroundNotification = ref(null);
@@ -34,6 +35,12 @@ const showForegroundNotif = (payload) => {
 };
 
 onMounted(async () => {
+  // Escuchar cuando regresa el internet en 1er plano para sincronizar al instante
+  window.addEventListener('online', () => {
+    console.log('[App] Conexión recuperada, forzando sync...');
+    syncOfflineRequestsNow();
+  });
+
   if (authStore.isLoggedIn) {
     await favoritesStore.load();
     startHeartbeat();

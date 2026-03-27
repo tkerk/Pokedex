@@ -104,38 +104,8 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // PokeAPI → Network First con caché
-  if (url.hostname === 'pokeapi.co') {
-    event.respondWith(
-      fetch(event.request).then((response) => {
-        if (response.ok) {
-          const cloned = response.clone();
-          caches.open(CACHE_DYNAMIC_NAME).then((cache) => {
-            cache.put(event.request, cloned);
-          });
-        }
-        return response;
-      }).catch(() => {
-        return caches.match(event.request);
-      })
-    );
-    return;
-  }
-
-  // Archivos estáticos → Network First
-  event.respondWith(
-    fetch(event.request).then((response) => {
-      if (response.ok) {
-        const cloned = response.clone();
-        caches.open(CACHE_DYNAMIC_NAME).then((cache) => {
-          cache.put(event.request, cloned);
-        });
-      }
-      return response;
-    }).catch(() => {
-      return caches.match(event.request);
-    })
-  );
+  // Fetch de otros recursos (API, etc) → Network Only para no llenar el SW de caché
+  event.respondWith(fetch(event.request).catch(() => caches.match(event.request)));
 });
 
 // ─── 4. BACKGROUND SYNC ───
