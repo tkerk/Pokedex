@@ -8,6 +8,7 @@ import { apiFetch } from '@/services/api';
 const router = useRouter();
 const friends = ref([]);
 const pendingRequests = ref([]);
+const pendingBattles = ref([]);
 const loading = ref(true);
 const searchCode = ref('');
 const searchResult = ref(null);
@@ -21,12 +22,14 @@ const loadFriends = async () => {
   if (!authStore.isLoggedIn) { loading.value = false; return; }
   loading.value = true;
   try {
-    const [f, p] = await Promise.all([
+    const [f, p, b] = await Promise.all([
       apiFetch('/friends'),
       apiFetch('/friends/pending'),
+      apiFetch('/battle/pending'),
     ]);
     friends.value = f;
     pendingRequests.value = p;
+    pendingBattles.value = b;
   } catch (e) { console.error(e); }
   finally { loading.value = false; }
 };
@@ -68,6 +71,20 @@ const acceptRequest = async (id) => {
 const rejectRequest = async (id) => {
   try {
     await apiFetch(`/friends/${id}/reject`, { method: 'PATCH' });
+    await loadFriends();
+  } catch (e) { console.error(e); }
+};
+
+const acceptBattle = async (id) => {
+  try {
+    await apiFetch(`/battle/accept/${id}`, { method: 'POST' });
+    router.push(`/battle/${id}`);
+  } catch (e) { console.error(e); }
+};
+
+const rejectBattle = async (id) => {
+  try {
+    await apiFetch(`/battle/reject/${id}`, { method: 'POST' });
     await loadFriends();
   } catch (e) { console.error(e); }
 };
@@ -163,6 +180,25 @@ onMounted(loadFriends);
             <div style="display:flex;gap:0.4rem;">
               <button @click="acceptRequest(req.friendship_id)" style="color:#22c55e;padding:0.3rem;"><Check :size="18" /></button>
               <button @click="rejectRequest(req.friendship_id)" style="color:#ef4444;padding:0.3rem;"><X :size="18" /></button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Pending Battles -->
+      <div v-if="pendingBattles.length > 0" style="margin-bottom:2rem;">
+        <h3 class="neon-text-green" style="font-size:0.75rem;letter-spacing:0.15em;text-transform:uppercase;margin-bottom:1rem;">
+          ⚔️ Retos de Batalla ({{ pendingBattles.length }})
+        </h3>
+        <div style="display:grid;gap:0.5rem;">
+          <div v-for="b in pendingBattles" :key="b.id" style="display:flex;align-items:center;justify-content:space-between;border:1px solid var(--neon-green);background:rgba(0,255,0,0.05);padding:0.8rem;">
+            <div>
+              <p style="font-size:0.8rem;font-weight:700;text-transform:uppercase;">{{ b.challenger_name }} te ha retado!</p>
+              <p style="font-size:0.55rem;color:rgba(255,255,255,0.6);">Haz click para empezar.</p>
+            </div>
+            <div style="display:flex;gap:0.4rem;">
+              <button @click="acceptBattle(b.id)" class="auth-btn" style="padding:0.3rem 0.8rem;font-size:0.65rem;">Luchar</button>
+              <button @click="rejectBattle(b.id)" style="color:#ef4444;padding:0.3rem;"><X :size="18" /></button>
             </div>
           </div>
         </div>

@@ -62,18 +62,55 @@ const onSearchInput = () => {
   debounce = setTimeout(doSearch, 400);
 };
 
-const addMember = (pokemon) => {
+// Manejo de Modal de Movimientos
+const showMovesModal = ref(false);
+const activePokemonForMoves = ref(null);
+const availableMoves = ref([]);
+const selectedMoves = ref([]);
+const movesLoading = ref(false);
+
+const openMoveSelection = async (pokemon) => {
   if (selectedMembers.value.length >= 6) return;
   if (selectedMembers.value.find(m => m.id === pokemon.id)) return;
-  selectedMembers.value.push({ id: pokemon.id, name: pokemon.name });
-  searchQuery.value = '';
-  searchResults.value = [];
+  
+  activePokemonForMoves.value = pokemon;
+  selectedMoves.value = [];
+  availableMoves.value = [];
+  showMovesModal.value = true;
+  movesLoading.value = true;
+
+  try {
+    const res = await fetch(`https://pokeapi.co/api/v2/pokemon/${pokemon.id}`);
+    const data = await res.json();
+    // Limitar a los primeros 40 movs para que la lista no sea kilométrica
+    availableMoves.value = data.moves.map(m => m.move).slice(0, 40); 
+  } catch (e) {
+    console.error(e);
+  } finally {
+    movesLoading.value = false;
+  }
 };
 
-const addFromFavorite = (fav) => {
-  if (selectedMembers.value.length >= 6) return;
-  if (selectedMembers.value.find(m => m.id === fav.pokemon_id)) return;
-  selectedMembers.value.push({ id: fav.pokemon_id, name: fav.pokemon_name });
+const toggleMove = (m) => {
+  const idx = selectedMoves.value.findIndex(sm => sm.name === m.name);
+  if (idx !== -1) selectedMoves.value.splice(idx, 1);
+  else if (selectedMoves.value.length < 4) selectedMoves.value.push(m);
+};
+
+const cancelMoveSelection = () => {
+  showMovesModal.value = false;
+  activePokemonForMoves.value = null;
+};
+
+const confirmMoveSelection = () => {
+  selectedMembers.value.push({ 
+    id: activePokemonForMoves.value.id, 
+    name: activePokemonForMoves.value.name,
+    moves: selectedMoves.value.map(m => ({ name: m.name, url: m.url })) 
+  });
+  searchQuery.value = '';
+  searchResults.value = [];
+  showMovesModal.value = false;
 };
 
 const removeMember = (idx) => {
@@ -86,7 +123,7 @@ const createTeam = async () => {
   if (selectedMembers.value.length !== 6) { createError.value = 'Selecciona exactamente 6 Pokémon'; return; }
 
   try {
-    const members = selectedMembers.value.map(m => ({ pokemonId: m.id, pokemonName: m.name }));
+    const members = selectedMembers.value.map(m => ({ pokemonId: m.id, pokemonName: m.name, moves: m.moves }));
     const result = await apiFetch('/teams', {
       method: 'POST',
       body: JSON.stringify({ teamName: teamName.value, members }),
@@ -106,6 +143,7 @@ const createTeam = async () => {
           pokemon_id: m.pokemonId,
           pokemon_name: m.pokemonName,
           position: i + 1,
+          moves: JSON.stringify(m.moves)
         })),
       };
       teams.value.unshift(tempTeam);
@@ -197,7 +235,7 @@ onMounted(() => {
           <div v-if="favoritesStore.items.length > 0" style="margin-bottom:1rem;">
             <label class="auth-label">AGREGAR DESDE FAVORITOS</label>
             <div style="display:flex;flex-wrap:wrap;gap:0.4rem;">
-              <button v-for="fav in favoritesStore.items" :key="fav.pokemon_id" @click="addFromFavorite(fav)"
+              <button v-for="fav in favoritesStore.items" :key="fav.pokemon_id" @click="openMoveSelection({ id: fav.pokemon_id, name: fav.pokemon_name })"
                 :disabled="selectedMembers.length >= 6 || selectedMembers.find(m => m.id === fav.pokemon_id)"
                 style="border:1px solid var(--border-dim);padding:0.2rem 0.5rem;font-size:0.6rem;text-transform:uppercase;cursor:pointer;"
                 :style="selectedMembers.find(m => m.id === fav.pokemon_id) ? 'opacity:0.3;' : 'color:var(--neon-green);'">
@@ -213,7 +251,7 @@ onMounted(() => {
             <input v-model="searchQuery" @input="onSearchInput" placeholder="Buscar por nombre o número..." />
           </div>
           <div v-if="searchResults.length > 0" style="display:flex;flex-wrap:wrap;gap:0.5rem;margin-bottom:1rem;">
-            <div v-for="p in searchResults" :key="p.id" @click="addMember(p)" style="cursor:pointer;border:1px solid var(--neon-green);padding:0.5rem;display:flex;align-items:center;gap:0.4rem;">
+            <div v-for="p in searchResults" :key="p.id" @click="openMoveSelection(p)" style="cursor:pointer;border:1px solid var(--neon-green);padding:0.5rem;display:flex;align-items:center;gap:0.4rem;">
               <img :src="getArtworkById(p.id)" style="width:40px;height:40px;" referrerpolicy="no-referrer" />
               <div>
                 <p style="font-size:0.7rem;text-transform:uppercase;font-weight:700;">{{ p.name }}</p>
@@ -268,5 +306,50 @@ onMounted(() => {
         </div>
       </div>
     </template>
+
+    <!-- Modal Movimientos -->
+    <div v-if="showMovesModal" class="modal-overlay">
+      <div class="modal-content">
+        <h3 style="font-size:0.9rem; margin-bottom: 0.5rem;">ELIGE 4 MOVIMIENTOS - {{ activePokemonForMoves?.name.toUpperCase() }}</h3>
+        <div v-if="movesLoading" class="loader-wrapper"><Loader2 class="spin" /></div>
+        <div v-else>
+          <div style="max-height: 250px; overflow-y: auto; display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; margin-bottom: 1rem;">
+            <button 
+              v-for="(m, i) in availableMoves" :key="i"
+              @click="toggleMove(m)"
+              :class="{'auth-btn': selectedMoves.find(sm => sm.name === m.name), 'pagination__btn': !selectedMoves.find(sm => sm.name === m.name)}"
+              style="font-size: 0.70rem; padding: 0.4rem; border: 1px solid var(--neon-blue); text-transform:uppercase;"
+              :disabled="selectedMoves.length >= 4 && !selectedMoves.find(sm => sm.name === m.name)"
+            >
+              {{ m.name.replace('-', ' ') }}
+            </button>
+          </div>
+          <p style="font-size:0.75rem; color: var(--neon-green); margin-bottom:1rem; font-weight:700;">
+            Seleccionados: {{selectedMoves.length}}/4
+          </p>
+          <div style="display:flex; justify-content: space-between;">
+            <button @click="cancelMoveSelection" style="background:transparent; color:#ef4444; border:1px solid #ef4444; padding:0.5rem 1rem; border-radius:4px; font-weight:700; cursor:pointer;">
+              CANCELAR
+            </button>
+            <button @click="confirmMoveSelection" class="auth-btn" :disabled="selectedMoves.length !== 4" style="max-width: 150px;">
+              CONFIRMAR
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
+
+<style scoped>
+.modal-overlay {
+  position: fixed; top:0; left:0; width:100vw; height:100vh;
+  background: rgba(0,0,0,0.85); backdrop-filter: blur(4px);
+  z-index: 1000; display:flex; justify-content:center; align-items:center;
+}
+.modal-content {
+  background: var(--dark-bg); border: 2px solid var(--neon-green);
+  padding: 1.5rem; width: 90%; max-width: 450px; border-radius: 8px;
+  box-shadow: 0 0 20px rgba(0,255,0,0.2);
+}
+</style>

@@ -26,6 +26,12 @@ export const favoritesStore = reactive({
       this.items = data;
       // Cachear en IndexedDB
       await cacheFavorites(data).catch(() => {});
+      // Pre-cache PokeAPI data for offline teams
+      if (navigator.onLine) {
+        data.forEach(f => {
+          fetch(`https://pokeapi.co/api/v2/pokemon/${f.pokemon_id}`).catch(()=>{});
+        });
+      }
     } catch (e) {
       console.error('Error cargando favoritos:', e);
       // Si offline, cargar desde cache

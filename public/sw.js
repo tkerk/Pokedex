@@ -104,7 +104,23 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Fetch de otros recursos (API, etc) → Network Only para no llenar el SW de caché
+  // PokeAPI JSON -> Cache First (Para equipos offline y movimientos)
+  if (url.hostname === 'pokeapi.co') {
+    event.respondWith(
+      caches.open(CACHE_DYNAMIC_NAME).then((cache) => {
+        return cache.match(event.request).then((cached) => {
+          if (cached) return cached;
+          return fetch(event.request).then((response) => {
+            if (response.ok) cache.put(event.request, response.clone());
+            return response;
+          }).catch(() => new Response(null, { status: 404 }));
+        });
+      })
+    );
+    return;
+  }
+
+  // Fetch de otros recursos (API, etc) → Stale-while-revalidate / Network first
   event.respondWith(fetch(event.request).catch(() => caches.match(event.request)));
 });
 

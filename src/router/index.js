@@ -17,6 +17,7 @@ const routes = [
   { path: '/profile', name: 'Profile', component: ProfileView },
   { path: '/login', name: 'Login', component: LoginView },
   { path: '/signup', name: 'Signup', component: SignupView },
+  { path: '/battle/:id', name: 'Battle', component: () => import('@/views/BattleView.vue') },
 ];
 
 const router = createRouter({
