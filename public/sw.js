@@ -86,6 +86,9 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
   if (!url.protocol.startsWith('http')) return;
 
+  // OMITIR interceptación para Socket.io (Previene Errores de CORS y Promesas Rechazadas)
+  if (url.pathname.includes('/socket.io/')) return;
+
   // Imágenes Pokémon → Cache First
   if (url.hostname === 'raw.githubusercontent.com' || url.pathname.includes('/sprites/')) {
     event.respondWith(
@@ -121,7 +124,13 @@ self.addEventListener('fetch', (event) => {
   }
 
   // Fetch de otros recursos (API, etc) → Stale-while-revalidate / Network first
-  event.respondWith(fetch(event.request).catch(() => caches.match(event.request)));
+  event.respondWith(
+    fetch(event.request).catch(() => {
+      return caches.match(event.request).then((cached) => {
+        return cached || new Response(null, { status: 404, statusText: 'Not Found offline' });
+      });
+    })
+  );
 });
 
 // ─── 4. BACKGROUND SYNC ───
