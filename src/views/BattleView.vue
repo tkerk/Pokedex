@@ -18,6 +18,10 @@ const matchWinner = ref(null);
 const actionPending = ref(false);
 const connectionError = ref('');
 
+const isWaitingRoom = ref(false);
+const iAmReady = ref(false);
+const playersReadyCount = ref(0);
+
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 // Extraer host de API_URL para socket.io
 const SOCKET_URL = API_URL.replace('/api', '');
@@ -78,7 +82,18 @@ onMounted(() => {
     logs.value.push({ message: 'Conectando a la arena de batalla...', type: 'system' });
   });
 
+  socket.value.on('battle_waiting_ready', () => {
+    isWaitingRoom.value = true;
+    logs.value.push({ message: 'Oponente conectado. Esperando confirmación.', type: 'system' });
+  });
+
+  socket.value.on('player_ready_status', ({ readyCount }) => {
+    playersReadyCount.value = readyCount;
+  });
+
   socket.value.on('battle_start', (state) => {
+    isWaitingRoom.value = false;
+    // Si iAmReady es true limpiamos para que luego todo fluya bien
     battleState.value = state;
     logs.value.push({ message: '¡LA BATALLA HA COMENZADO!', type: 'system-major' });
   });
@@ -161,6 +176,12 @@ const switchPokemon = (switchIndex) => {
 const quitBattle = () => {
   router.push('/friends');
 };
+
+const confirmReady = () => {
+  if (iAmReady.value) return;
+  iAmReady.value = true;
+  socket.value.emit('player_ready', { battleId });
+};
 </script>
 
 <template>
@@ -175,10 +196,26 @@ const quitBattle = () => {
       </div>
     </div>
 
+    <!-- Sala de Espera Listo -->
+    <div v-else-if="isWaitingRoom" class="loader-wrapper" style="height: 100vh;">
+      <h2 class="neon-text-blue" style="margin-bottom: 2rem; font-size:1.5rem; letter-spacing:0.1em; text-transform:uppercase;">Sala de Espera</h2>
+      <p style="margin-bottom: 2rem; font-size:0.9rem;">Tu oponente ya está conectado en la arena.</p>
+      
+      <button v-if="!iAmReady" @click="confirmReady" class="auth-btn" style="padding:1rem 2rem; font-size:1rem;">LISTO PARA EMPEZAR</button>
+      <div v-else style="text-align:center;">
+        <Loader2 :size="48" class="spin" style="color:var(--neon-green); margin:0 auto 1rem;" />
+        <p style="color:var(--neon-green); font-weight:700; letter-spacing:0.1em;">ESPERANDO AL OPONENTE...</p>
+      </div>
+      
+      <p style="margin-top:3rem; font-size:0.8rem; letter-spacing:0.2em; color:var(--neon-blue);">
+        JUGADORES LISTOS: <span style="font-weight:900; color:#fff;">{{ playersReadyCount }}</span> / 2
+      </p>
+    </div>
+
     <!-- Pantalla de Carga Inicial -->
     <div v-else-if="!battleState" class="loader-wrapper" style="height: 100vh;">
       <Loader2 :size="64" class="spin" style="color:var(--neon-green);" />
-      <p style="margin-top:1rem; font-weight:700; letter-spacing:0.1em; color:var(--neon-green);">ESPERANDO AL OPONENTE...</p>
+      <p style="margin-top:1rem; font-weight:700; letter-spacing:0.1em; color:var(--neon-green);">ESPERANDO A QUE EL OPONENTE SE CONECTE...</p>
     </div>
 
     <!-- Arena Principal -->
